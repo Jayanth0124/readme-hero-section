@@ -1,6 +1,6 @@
 import { generateHeroSvg } from '../../components/Hero';
 
-// Added a User-Agent header and increased timeout to stop APIs from blocking us
+// Helper to stop APIs from hanging
 const fetchWithTimeout = async (resource, options = {}) => {
   const { timeout = 5000 } = options;
   const controller = new AbortController();
@@ -17,11 +17,26 @@ const fetchWithTimeout = async (resource, options = {}) => {
   return response;
 };
 
+// 🟢 NEW: Converts your external image URL into raw Base64 code
+const getBase64Image = async (imageUrl) => {
+  try {
+    const response = await fetch(imageUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    const mimeType = response.headers.get('content-type') || 'image/jpeg';
+    return `data:${mimeType};base64,${base64}`;
+  } catch (error) {
+    console.error("Failed to convert image to Base64:", error);
+    return ""; // Falls back to empty if the image link is broken
+  }
+};
+
 export default async function handler(req, res) {
   const { 
     name = "Jayanth", 
     role = "Full-Stack Developer",
-    avatar = "https://jayanth.site/assets/img/j2.jpg",
+    avatar = "https://www.jayanth.site/assets/img/j2.jpg", // Your image link
     theme = 'royal'
   } = req.query;
 
@@ -32,7 +47,7 @@ export default async function handler(req, res) {
   let liveWakaTime = "Connecting...";
 
   try {
-    // 1. FETCH REAL WAKATIME DATA
+    // 1. Fetch WakaTime
     try {
       const wakaRes = await fetchWithTimeout(wakatimeUrl);
       if (wakaRes.ok) {
@@ -43,17 +58,13 @@ export default async function handler(req, res) {
       console.log("WakaTime fetch failed");
     }
 
-    // 2. FETCH REAL GITHUB VIEWS (The Hacker Way)
-    // We fetch the popular Komarev view counter SVG as raw text...
+    // 2. Fetch GitHub Views
     try {
       const viewsRes = await fetchWithTimeout(`https://komarev.com/ghpvc/?username=${githubUser}&style=flat`);
       if (viewsRes.ok) {
         const viewsSvg = await viewsRes.text();
-        
-        // ...and use Regex to extract the numbers out of the raw SVG code!
         const matches = viewsSvg.match(/>([0-9,]+)<\/text>/g);
         if (matches && matches.length > 0) {
-          // Cleans the match so it just leaves the pure number (e.g., "1,819")
           liveViews = matches[matches.length - 1].match(/([0-9,]+)/)[0];
         }
       }
@@ -61,10 +72,13 @@ export default async function handler(req, res) {
       console.log("Views fetch failed");
     }
 
-    // Generate the SVG with your REAL live data
-    const svg = generateHeroSvg({ name, role, views: liveViews, wakatime: liveWakaTime, avatar }, theme);
+    // 🟢 3. Convert the Avatar to Base64 BEFORE rendering the SVG
+    const base64Avatar = await getBase64Image(avatar);
 
-    // Strict Cache-Busting: Forces GitHub to run this script every single time someone looks at your profile
+    // Pass the base64 string to the SVG generator instead of the raw URL
+    const svg = generateHeroSvg({ name, role, views: liveViews, wakatime: liveWakaTime, avatar: base64Avatar }, theme);
+
+    // Cache-Busting
     res.setHeader('Content-Type', 'image/svg+xml');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
     res.setHeader('Pragma', 'no-cache');
@@ -74,7 +88,9 @@ export default async function handler(req, res) {
     
   } catch (error) {
     console.error("Critical failure:", error);
-    const fallbackSvg = generateHeroSvg({ name, role, views: "Offline", wakatime: "Offline", avatar }, theme);
+    // If everything fails, still try to render the avatar
+    const base64Avatar = await getBase64Image(avatar);
+    const fallbackSvg = generateHeroSvg({ name, role, views: "Offline", wakatime: "Offline", avatar: base64Avatar }, theme);
     res.setHeader('Content-Type', 'image/svg+xml');
     return res.status(200).send(fallbackSvg);
   }
