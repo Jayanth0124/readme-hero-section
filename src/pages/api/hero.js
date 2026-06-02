@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   const { 
     name = "Jayanth", 
     role = "Full-Stack Developer",
-    avatar = "https://www.jayanth.site/assets/img/j2.jpg",
+    avatar = "https://www.djayanth.site/assets/img/j2.jpg",
     theme = 'royal'
   } = req.query;
 
